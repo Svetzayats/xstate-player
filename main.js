@@ -1,78 +1,50 @@
 import './style.css';
+import { createMachine, interpret } from 'xstate';
+import elements from './utils/elements';
+import { inspect } from '@xstate/inspect';
 
-const initialState = { value: 'loading' };
-// Create a state machine transition function either using:
-// - a switch statement (or nested switch statements)
-// - or an object (transition lookup table)
+/* inspect({
+  iframe: false,
+}); */
 
-// Also, come up with a simple way to "interpret" it, and
-// make it an object that you can `.send(...)` events to.
-
-function transition(state = initialState, event) {
-  switch (state.value) {
-    case 'loading':
-      if (event.type === 'LOADED') {
-        return {
-          ...state,
-          value: 'playing',
-        };
-      }
-      break;
-    case 'playing':
-      if (event.type === 'PAUSE') {
-        return { ...state, value: 'paused' };
-      }
-      break;
-    case 'paused':
-      if (event.type === 'PLAY') {
-        return { ...state, value: 'playing' };
-      }
-      break;
-    default:
-      break;
-  }
-  return state;
-}
-
-window.transition = transition;
-
-const machine = {
+const machine = createMachine({
   initial: 'loading',
   states: {
     loading: {
       on: {
-        LOADED: 'playing',
-      },
-    },
-    playing: {
-      on: {
-        PAUSE: 'paused',
+        LOADED: { target: 'playing' },
       },
     },
     paused: {
       on: {
-        PLAY: 'playing',
+        PLAY: { target: 'playing' },
+      },
+    },
+    playing: {
+      on: {
+        PAUSE: { target: 'paused' },
       },
     },
   },
-};
+});
 
-function machineTransition(
-  state = {
-    value: machine.initial,
-  },
-  event,
-) {
-  const nextStateValue = machine.states[state.value].on?.[event.type];
+// event emitter
+const service = interpret(machine, { devTools: true }).start();
+service.subscribe((state) => {
+  console.log(state.value);
+  elements.elLoadingButton.hidden = !state.matches('loading');
+  elements.elPlayButton.hidden = !state.can({ type: 'PLAY' });
+  elements.elPauseButton.hidden = !state.can({ type: 'PAUSE' });
+});
 
-  if (!nextStateValue) {
-    return state;
-  }
+// button handlers
+elements.elPlayButton.addEventListener('click', () => {
+  service.send({ type: 'PLAY' });
+});
 
-  return {
-    ...state,
-    value: nextStateValue,
-  };
-}
+elements.elPauseButton.addEventListener('click', () => {
+  service.send({ type: 'PAUSE' });
+});
 
-window.machineTransition = machineTransition;
+// start
+service.send({ type: 'LOADED' });
