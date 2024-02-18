@@ -3,6 +3,7 @@ import { createMachine, interpret, assign, send } from 'xstate';
 import elements from './utils/elements';
 import { inspect } from '@xstate/inspect';
 import { raise } from 'xstate/lib/actions';
+import { formatTime } from './utils/formatTime';
 
 /* inspect({
   iframe: false,
@@ -11,14 +12,18 @@ import { raise } from 'xstate/lib/actions';
 const machine = createMachine({
   initial: 'loading',
   context: {
-    audio: null,
+    title: undefined,
+    artist: undefined,
+    duration: 0,
+    elapsed: 0,
     volume: 50,
+    likeStatus: 'unliked', // 'liked' | 'unliked' | 'disliked',
   },
   states: {
     loading: {
       on: {
         LOADED: {
-          actions: ['saveAudio'],
+          actions: ['assignAudioInfo'],
           target: 'playing',
         },
       },
@@ -53,12 +58,19 @@ const machine = createMachine({
     VOLUME: {
       actions: ['assignVolume'],
     },
+    'AUDIO.TIME': {
+      actions: 'assignTime',
+    },
   },
 }).withConfig({
   actions: {
-    saveAudio: ({ context, event }, params) => {
-      console.log('saving ' + params.audio);
-    },
+    assignAudioInfo: assign({
+      title: (_, event) => event.data.title,
+      artist: (_, event) => event.data.artist,
+      duration: (_, event) => event.data.duration,
+      likeStatus: 'unliked',
+      elapsed: 0,
+    }),
     playAudio: ({ context, event }, params) => {
       console.log('play audio');
     },
@@ -68,35 +80,51 @@ const machine = createMachine({
     skipAudio: ({ context, event }, params) => {
       console.log('skip audio');
     },
-    likeAudio: ({ context, event }, params) => {
-      console.log('like audio');
-    },
-    unlikeAudio: ({ context, event }, params) => {
-      console.log('unlike audio');
-    },
-    dislikeAudio: ({ context, event }, params) => {
-      console.log('dislike audio');
-    },
-    assignVolume: ({ context, event }, params) => {
-      console.log('assign volume');
-      assign({
-        volume: ({ event }) => {
-          console.log('event', event);
-          console.log('params', params);
-          return 100;
-        },
-      });
-    },
+    likeAudio: assign({
+      likeStatus: 'liked',
+    }),
+    unlikeAudio: assign({
+      likeStatus: 'unliked',
+    }),
+    dislikeAudio: assign({
+      likeStatus: 'disliked',
+    }),
+    assignVolume: assign({
+      volume: (_, event) => event.level,
+    }),
+    assignTime: assign({
+      elapsed: (_, event) => event.currentTime,
+    }),
   },
 });
 
 // event emitter
 const service = interpret(machine, { devTools: true }).start();
 service.subscribe((state) => {
-  console.log(state.value);
-  elements.elLoadingButton.hidden = !state.matches('loading');
+  console.log(state.context);
+  const { context } = state;
+
+  elements.elLoadingButton.hidden = !state.hasTag('loading');
   elements.elPlayButton.hidden = !state.can({ type: 'PLAY' });
   elements.elPauseButton.hidden = !state.can({ type: 'PAUSE' });
+  elements.elVolumeButton.dataset.level =
+    context.volume === 0
+      ? 'zero'
+      : context.volume <= 2
+        ? 'low'
+        : context.volume >= 8
+          ? 'high'
+          : undefined;
+
+  elements.elScrubberInput.setAttribute('max', context.duration);
+  elements.elScrubberInput.value = context.elapsed;
+  elements.elElapsedOutput.innerHTML = formatTime(
+    context.elapsed - context.duration,
+  );
+
+  elements.elLikeButton.dataset.likeStatus = context.likeStatus;
+  elements.elArtist.innerHTML = context.artist;
+  elements.elTitle.innerHTML = context.title;
 });
 
 // button handlers
@@ -119,4 +147,17 @@ elements.elDislikeButton.addEventListener('click', () => {
 });
 
 // start
-service.send({ type: 'LOADED', audio: 'loaded audio' });
+service.send({
+  type: 'LOADED',
+  data: { title: 'Super song', artist: 'Taylor Swift', duration: 500 },
+});
+
+service.send({
+  type: 'VOLUME',
+  level: 75,
+});
+
+service.send({
+  type: 'AUDIO.TIME',
+  currentTime: 230,
+});
