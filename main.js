@@ -16,7 +16,7 @@ const machine = createMachine({
     artist: undefined,
     duration: 0,
     elapsed: 0,
-    volume: 50,
+    volume: 5,
     likeStatus: 'unliked', // 'liked' | 'unliked' | 'disliked',
   },
   states: {
@@ -39,6 +39,10 @@ const machine = createMachine({
       on: {
         PAUSE: { target: 'paused' },
       },
+      always: {
+        cond: (context) => context.elapsed >= context.duration,
+        target: 'paused',
+      },
     },
   },
   on: {
@@ -55,7 +59,18 @@ const machine = createMachine({
     DISLIKE: {
       actions: ['dislikeAudio', raise('SKIP')],
     },
+    'LIKE.TOGGLE': [
+      {
+        cond: (context) => context.likeStatus === 'liked',
+        actions: [raise('UNLIKE')],
+      },
+      {
+        cond: (context) => context.likeStatus === 'unliked',
+        actions: [raise('LIKE')],
+      },
+    ],
     VOLUME: {
+      cond: 'volumeInRange',
       actions: ['assignVolume'],
     },
     'AUDIO.TIME': {
@@ -95,6 +110,9 @@ const machine = createMachine({
     assignTime: assign({
       elapsed: (_, event) => event.currentTime,
     }),
+  },
+  guards: {
+    volumeInRange: (_, event) => event.level >= 0 && event.level <= 10,
   },
 });
 
@@ -140,7 +158,7 @@ elements.elSkipButton.addEventListener('click', () => {
   service.send({ type: 'SKIP' });
 });
 elements.elLikeButton.addEventListener('click', () => {
-  service.send({ type: 'LIKE' });
+  service.send({ type: 'LIKE.TOGGLE' });
 });
 elements.elDislikeButton.addEventListener('click', () => {
   service.send({ type: 'DISLIKE' });
@@ -161,3 +179,5 @@ service.send({
   type: 'AUDIO.TIME',
   currentTime: 230,
 });
+
+window.machine = service;
